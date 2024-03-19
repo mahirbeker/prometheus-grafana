@@ -1,0 +1,94 @@
+version: '3.10'
+ 
+networks:
+  monitoring:
+    driver: bridge
+    
+volumes:
+  prometheus_data: {}
+  
+services:
+  mycrontab:
+    image: mahirbeker/mycronjob:v2
+    container_name: mycontainer
+    restart: unless-stopped
+    command: ["cron", "-f"]
+    ports:
+      - 8082:8082 
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+
+  node-exporter: 
+    image: prom/node-exporter:latest 
+    container_name: node-exporter 
+    restart: unless-stopped 
+    volumes: 
+      - /proc:/host/proc:ro 
+      - /sys:/host/sys:ro 
+      - /:/rootfs:ro 
+    command: #runtime komutlari
+      - '--path.procfs=/host/proc' #sistem kaynakları, süreçler, donanım bilgileri ve diğer sistem bilgileriyle ilgili çeşitli dosyalar ve klasörler 
+      - '--path.rootfs=/rootfs'  #sistem performansı ve durumuyla ilgili bilgilere erişim sağlanır.
+      - '--path.sysfs=/host/sys'  #işletim sistemi tarafından yönetilen donanım ve aygıtlarla ilgili çeşitli bilgileri içeren dosyalar
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)' 
+    ports: 
+      - 9100:9100 
+    networks: 
+      - monitoring 
+
+  prometheus: 
+    image: prom/prometheus:latest 
+    user: "1000" 
+    environment: 
+      - PUID=1000 
+      - PGID=1000 
+    container_name: prometheus 
+    restart: unless-stopped 
+    volumes: 
+      - ~/promgraf/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml #host ve container yapilandirma dosyasi linki
+      - ~/promgraf/prometheus:/prometheus #host ile container arasinda dosya transferi ve paylasimi icin link
+    command: #runtime komutlari
+      - '--config.file=/etc/prometheus/prometheus.yml' #yapilandirma dosyasi 
+      - '--storage.tsdb.path=/prometheus' #Time Series Data Base veri dizini
+      - '--web.console.libraries=/etc/prometheus/console_libraries' #Prometheus web interface kutuphane dizni
+      - '--web.console.templates=/etc/prometheus/consoles' #Prometheus web interface template dosyalari dizini
+      - '--web.enable-lifecycle' #runtime seceneklerini uzaktan yonetebilmeyi etkinlestirir (reload-restart vb.)
+    ports: 
+      - 9090:9090 
+    networks: 
+      - monitoring 
+
+  grafana: 
+    image: grafana/grafana:latest 
+    user: "1000" 
+    container_name: grafana 
+    ports: 
+      - 3000:3000 
+    restart: unless-stopped 
+    volumes: 
+      - ~/promgraf/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources 
+      - ~/promgraf/grafana:/var/lib/grafana # Grafana yapılandırmasının ve içeriğinin kalıcı olmasını sağlar
+    networks: 
+      - monitoring 
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    ports:
+      - 8080:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    privileged: true
+    restart: unless-stopped
+    networks:
+      - monitoring
+
